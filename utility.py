@@ -10,7 +10,7 @@ from sklearn.metrics import accuracy_score
 
 st.title("EnergyScore Utility Level Default Risk Analysis")
 st.write("""
-         This app displays the default risk predictions from EnergyScore and allows comparison with FICO scores across different ZIP codes.
+         This app displays the default risk predictions from EnergyScore and allows comparison with FICO scores across different Utility zones.
          """)
 
 # Sidebar for user inputs
@@ -134,18 +134,18 @@ colormap = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'red'],
                              caption='Qualification Increase')
 
 # Add ZIP layer
-zip_layer = folium.FeatureGroup(name='ZIP Codes')
-folium.GeoJson(
-    zip_level_geo.__geo_interface__,
-    style_function=lambda feature: {
-        'fillOpacity': 0.7,
-        'weight': 0.5,
-        'color': 'black',
-        'fillColor': colormap(feature['properties']['Qualification Increase']) if feature['properties']['Qualification Increase'] else 'gray'
-    },
-    tooltip=folium.GeoJsonTooltip(fields=['ZIP', 'EnergyScore Accuracy', 'FICO Accuracy', 'Qualification Increase'],
-                                  aliases=['ZIP Code', 'EnergyScore Accuracy', 'FICO Accuracy', 'Qualification Increase'])
-).add_to(zip_layer)
+# zip_layer = folium.FeatureGroup(name='ZIP Codes')
+# folium.GeoJson(
+#     zip_level_geo.__geo_interface__,
+#     style_function=lambda feature: {
+#         'fillOpacity': 0.7,
+#         'weight': 0.5,
+#         'color': 'black',
+#         'fillColor': colormap(feature['properties']['Qualification Increase']) if feature['properties']['Qualification Increase'] else 'gray'
+#     },
+#     tooltip=folium.GeoJsonTooltip(fields=['ZIP', 'EnergyScore Accuracy', 'FICO Accuracy', 'Qualification Increase'],
+#                                   aliases=['ZIP Code', 'EnergyScore Accuracy', 'FICO Accuracy', 'Qualification Increase'])
+# ).add_to(zip_layer)
 
 # Add Utility Layer
 utility_layer = folium.FeatureGroup(name='Utility Zones')
