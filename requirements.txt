@@ -1,13 +1,8 @@
-# This file may be used to create an environment using:
-# $ conda create --name <env> --file <this file>
-# platform: osx-arm64
-
-
-streamlit
-streamlit-folium
-folium
-geopandas
-numpy
-branca
-scikit-learn
-
+branca==0.8.0
+folium==0.17.0
+geopandas==1.0.1
+numpy==2.1.2
+pandas==2.2.3
+scikit_learn==1.5.2
+streamlit==1.39.0
+streamlit_folium==0.23.1
