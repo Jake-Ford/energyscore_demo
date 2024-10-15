@@ -42,7 +42,6 @@ def load_state_util(state_name):
 
 # Function to calculate metrics for each ZIP
 def calculate_zip_metrics(stats_data_person, fico_threshold, energy_score_threshold):
-    # Create masks for conditions
     stats_data_person['FICO_PASS'] = stats_data_person['FICO_V9_SCORE'] > fico_threshold
     stats_data_person['ENERGYSCORE_PASS'] = stats_data_person['WEIGHTED_ENERGYSCORE'] > energy_score_threshold
 
@@ -85,7 +84,7 @@ def calculate_zip_metrics(stats_data_person, fico_threshold, energy_score_thresh
     return zip_metrics
 
 
-# New function to calculate ZIP to utility mapping and display on the map
+# Function to calculate ZIP to utility mapping and display on the map
 def calculate_zip_to_util(zip_level_geo, state_name):
     # Load the utility data for the state
     state_util = load_state_util(state_name)
@@ -102,7 +101,10 @@ def calculate_zip_to_util(zip_level_geo, state_name):
     # Group by utility name ('new_name') and calculate the mean of 'Qualification Increase'
     zip_to_util = zip_level_geo.groupby('new_name')['Qualification Increase'].mean().reset_index()
 
-    return zip_to_util
+    # Merge utility data with the calculated qualification increase
+    state_util = state_util.merge(zip_to_util, on='new_name', how='left')
+
+    return state_util
 
 
 # Streamlit sidebar input to select a state
@@ -115,38 +117,57 @@ zip_level_geo = zip_level_geo.dropna(subset=['geometry'])
 zip_level_geo = gpd.GeoDataFrame(zip_level_geo, geometry='geometry')
 
 # Use the new function to calculate ZIP to utility metrics
-zip_to_util = calculate_zip_to_util(zip_level_geo, state_name)
+state_util = calculate_zip_to_util(zip_level_geo, state_name)
 
 # Display utility-level metrics
 st.write(f"Utility Qualification Increase for {state_name}")
-st.write(zip_to_util)
+st.write(state_util[['new_name', 'Qualification Increase']])
 
 # Display map with Folium
 m = folium.Map(location=[37.7749, -122.4194], zoom_start=6)
 
 # Create colormap based on Qualification Increase
-min_value = zip_level_geo['Qualification Increase'].min()
-max_value = zip_level_geo['Qualification Increase'].max()
+min_value = min(zip_level_geo['Qualification Increase'].min(), state_util['Qualification Increase'].min())
+max_value = max(zip_level_geo['Qualification Increase'].max(), state_util['Qualification Increase'].max())
 colormap = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'red'],
                              vmin=min_value, vmax=max_value,
                              caption='Qualification Increase')
 
-def style_function(feature):
-    accuracy = feature['properties']['Qualification Increase']
-    return {
+# Add ZIP layer
+zip_layer = folium.FeatureGroup(name='ZIP Codes')
+folium.GeoJson(
+    zip_level_geo.__geo_interface__,
+    style_function=lambda feature: {
         'fillOpacity': 0.7,
         'weight': 0.5,
         'color': 'black',
-        'fillColor': colormap(accuracy) if accuracy else 'gray'
-    }
-
-# Add GeoJson layer with styling
-folium.GeoJson(
-    zip_level_geo.__geo_interface__,
-    style_function=style_function,
+        'fillColor': colormap(feature['properties']['Qualification Increase']) if feature['properties']['Qualification Increase'] else 'gray'
+    },
     tooltip=folium.GeoJsonTooltip(fields=['ZIP', 'EnergyScore Accuracy', 'FICO Accuracy', 'Qualification Increase'],
                                   aliases=['ZIP Code', 'EnergyScore Accuracy', 'FICO Accuracy', 'Qualification Increase'])
-).add_to(m)
+).add_to(zip_layer)
+
+zip_layer.add_to(m)
+
+# Add Utility Layer
+# utility_layer = folium.FeatureGroup(name='Utility Zones')
+# folium.GeoJson(
+#     state_util.__geo_interface__,
+#     style_function=lambda feature: {
+#         'fillOpacity': 0.7,
+#         'weight': 0.5,
+#         'color': 'black',
+#         'fillColor': colormap(feature['properties']['Qualification Increase']) if feature['properties']['Qualification Increase'] else 'gray'
+#     },
+#     tooltip=folium.GeoJsonTooltip(fields=['new_name', 'Qualification Increase'], aliases=['Utility Zone', 'Qualification Increase'])
+# ).add_to(utility_layer)
+
+# Add layers to map
+#zip_layer.add_to(m)
+#utility_layer.add_to(m)
+
+# Add LayerControl so users can toggle between layers
+folium.LayerControl().add_to(m)
 
 # Add colormap legend
 colormap.add_to(m)
