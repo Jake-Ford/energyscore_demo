@@ -7,4 +7,4 @@ streamlit-folium
 branca
 folium
 matplotlib
-seaborm
+seaborn
