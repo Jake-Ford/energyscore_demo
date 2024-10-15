@@ -9,15 +9,20 @@ from sklearn.metrics import accuracy_score
 
 
 # Load the GeoJSON file
-#zip_geojson = gpd.read_file('us_zips.geojson')
 zip_geojson = gpd.read_file('select_zips.geojson')
 
-# Load person data
-person_data = pd.read_csv('data/standard/experian_rf_stats_person.csv')
-person_data = person_data.head(10000)
+# Load person data, forcing ZIP to be read as strings
+person_data = pd.read_csv('data.csv', dtype={'ZIP': str})
 
-person_data['ZIP'] = person_data['ZIP'].astype(str).str.zfill(5)
+# Ensure ZIP codes have leading zeros and handle floats
+person_data['ZIP'] = person_data['ZIP'].apply(lambda x: str(int(float(x))).zfill(5) if pd.notnull(x) else '')
+
+# Ensure GeoJSON ZIP codes are formatted as strings with leading zeros
 zip_geojson['ZIP'] = zip_geojson['ZCTA5CE10'].astype(str).str.zfill(5)
+
+# Check if ZIPs were properly converted
+print(person_data['ZIP'].head())
+print(zip_geojson['ZIP'].head())
 
 # App title and description
 st.title("EnergyScore ZIP Code-level Default Risk Analysis")
