@@ -2,6 +2,7 @@ branca==0.8.0
 folium==0.17.0
 geopandas==1.0.1
 numpy==2.1.2
+#numpy ==1.25
 pandas==2.2.3
 scikit_learn==1.5.2
 streamlit==1.39.0

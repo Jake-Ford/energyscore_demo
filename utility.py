@@ -125,6 +125,7 @@ with st.spinner("Loading map..."):
     def calculate_zip_to_util(zip_level_geo, state_name):
         # Load the utility data for the state
         state_util = load_state_util(state_name)
+        state_util.rename(columns={'new_name': 'Utility'}, inplace=True)
 
         # Ensure ZIP code geometries have the same projection as the utility data
         zip_level_geo = zip_level_geo.to_crs(state_util.crs)
@@ -138,10 +139,10 @@ with st.spinner("Loading map..."):
 
         # Group by utility name ('new_name') and calculate the mean of 'Qualification Increase'
         zip_to_util = zip_level_geo.groupby(
-            'new_name')['Qualification Increase'].mean().reset_index()
+            'Utility')['Qualification Increase'].mean().reset_index()
 
         # Merge utility data with the calculated qualification increase
-        state_util = state_util.merge(zip_to_util, on='new_name', how='left')
+        state_util = state_util.merge(zip_to_util, on='Utility', how='left')
 
         return state_util
 
@@ -161,7 +162,7 @@ with st.spinner("Loading map..."):
 
     # Display utility-level metrics
     st.write(f"Utility Qualification Increase for {state_name}")
-    st.write(state_util[['new_name', 'Qualification Increase']])
+    st.write(state_util[['Utility', 'Qualification Increase']])
 
     def get_state_coordinates(state_name):
         if state_name == 'New Mexico':
@@ -206,7 +207,7 @@ with st.spinner("Loading map..."):
             'color': 'black',
             'fillColor': colormap(feature['properties']['Qualification Increase']) if feature['properties']['Qualification Increase'] else 'gray'
         },
-        tooltip=folium.GeoJsonTooltip(fields=['new_name', 'Qualification Increase'], aliases=[
+        tooltip=folium.GeoJsonTooltip(fields=['Utility', 'Qualification Increase'], aliases=[
                                       'Utility Zone', 'Qualification Increase'])
     ).add_to(utility_layer)
 
