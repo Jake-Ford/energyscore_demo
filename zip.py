@@ -71,11 +71,12 @@ with st.spinner("Loading map..."):
 
     # Function to calculate metrics for each ZIP
     def calculate_zip_metrics(stats_data_person, fico_threshold, energy_score_threshold):
-        stats_data_person['FICO_PASS'] = stats_data_person['FICO_V9_SCORE'] > fico_threshold
+        stats_data_person['FICO_PASS'] = stats_data_person['FICO_V9_SCORE'] < fico_threshold
         stats_data_person['ENERGYSCORE_PASS'] = stats_data_person['WEIGHTED_ENERGYSCORE'] > energy_score_threshold
 
         def calc_metrics(group):
             total_population = len(group)
+
             if total_population == 0:
                 return pd.Series({
                     'Total Population': 0,
@@ -86,17 +87,20 @@ with st.spinner("Loading map..."):
                     'Qualification Increase': 0,
                 })
             
-            below_fico = group[group['FICO_PASS'] == False]
-            above_fico = group[group['FICO_PASS'] == True]
+            above_fico = group[group['FICO_V9_SCORE'] > fico_threshold]
+            below_fico = group[group['FICO_V9_SCORE'] < fico_threshold]
 
             below_fico_pass = below_fico[below_fico['WEIGHTED_ENERGYSCORE'] <= energy_score_threshold]
+            
             pct_below_fico = len(below_fico) / total_population
             pct_above_fico = len(above_fico) / total_population
 
             percent_increase_in_qualifications = (len(below_fico_pass) / total_population) * 100 if len(below_fico_pass) > 0 else 0
+            numeric_increase_in_qualifications = len(below_fico_pass) if len(below_fico_pass) > 0 else 0
 
-            fico_accuracy = accuracy_score(below_fico['WEIGHTED_ACTUAL_OUTPUT'], below_fico['FICO_PASS']) if len(below_fico) > 0 else np.nan
-            energy_accuracy = accuracy_score(below_fico['WEIGHTED_ACTUAL_OUTPUT'], below_fico['ENERGYSCORE_PASS']) if len(below_fico) > 0 else np.nan
+            energy_accuracy = accuracy_score(group['WEIGHTED_ACTUAL_OUTPUT'], group['ENERGYSCORE_PASS']) #if len(below_fico) > 0 else np.nan
+
+            fico_accuracy = accuracy_score(group['WEIGHTED_ACTUAL_OUTPUT'], group['FICO_PASS']) #if len(below_fico) > 0 else np.nan
 
             return pd.Series({
                 'Total Population': total_population,
@@ -105,12 +109,14 @@ with st.spinner("Loading map..."):
                 'FICO Accuracy': fico_accuracy,
                 'EnergyScore Accuracy': energy_accuracy,
                 'Qualification Increase': percent_increase_in_qualifications,
+                'Numeric Increase': numeric_increase_in_qualifications,
             })
 
         # Group by ZIP and apply metrics calculation
         zip_metrics = stats_data_person.groupby('ZIP').apply(calc_metrics)
         zip_metrics = zip_metrics.reset_index()
         return zip_metrics
+
 
 
     # Function to calculate ZIP to utility mapping and display on the map
