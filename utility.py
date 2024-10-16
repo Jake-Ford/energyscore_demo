@@ -178,7 +178,7 @@ with st.spinner("Loading map..."):
     ), state_util['Qualification Increase'].min())
     max_value = max(zip_level_geo['Qualification Increase'].max(
     ), state_util['Qualification Increase'].max())
-    colormap = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'red'],
+    colormap = cm.LinearColormap(colors=["#fde725", "#35b779", "#31688e", "#440154"],
                                  vmin=min_value, vmax=max_value,
                                  caption='Qualification Increase')
 
