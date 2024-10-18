@@ -48,9 +48,18 @@ with st.spinner("Loading map..."):
         "Select FICO Score Threshold", 300, 850, 650, step=10)
     energy_score_threshold = st.sidebar.slider(
         "EnergyScore Threshold for High Risk", 0.0, 1.0, 0.75, step=0.01)
+    
+    solstice_territory_name = st.sidebar.selectbox(
+        "Select Solstice Territory", ["Ameren Illinois", "Eversource - Western MA"],
+    )
+
+    def get_solstice_territory_geojson(solstice_territory_name):
+        load_name = "filtered_geojsons/" + solstice_territory_name + '.geojson'
+        return gpd.read_file(load_name)
 
     # Load the GeoJSON file
-    zip_geojson = gpd.read_file('demo_zips.geojson')
+    #zip_geojson = gpd.read_file('demo_zips.geojson')
+    zip_geojson = get_solstice_territory_geojson(solstice_territory_name)
 
     # Load person data, forcing ZIP to be read as strings
     person_data = pd.read_csv('data.csv', dtype={'ZIP': str})

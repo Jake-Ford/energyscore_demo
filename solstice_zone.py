@@ -8,7 +8,7 @@ import hmac
 # Import to render folium maps in Streamlit
 from streamlit_folium import folium_static
 from sklearn.metrics import accuracy_score
-
+import plotly.express as px
 
 def check_password():
     """Returns `True` if the user had the correct password."""
@@ -21,14 +21,10 @@ def check_password():
         else:
             st.session_state["password_correct"] = False
 
-    # Return True if the password is validated.
     if st.session_state.get("password_correct", False):
         return True
 
-    # Show input for password.
-    st.text_input(
-        "Password", type="password", on_change=password_entered, key="password"
-    )
+    st.text_input("Password", type="password", on_change=password_entered, key="password")
     if "password_correct" in st.session_state:
         st.error("😕 Password incorrect")
     return False
@@ -41,6 +37,8 @@ with st.spinner("Loading map..."):
     st.title("EnergyScore Utility Level Default Risk Analysis")
     st.write("""
            This app displays the default risk predictions from EnergyScore and allows comparison with FICO scores across different Utility zones.
+             
+            Select the Solstice Territory and the FICO Score and EnergyScore thresholds to view the default risk predictions.
            """)
 
     # Sidebar for user inputs
@@ -50,41 +48,28 @@ with st.spinner("Loading map..."):
         "EnergyScore Threshold for High Risk", 0.0, 1.0, 0.75, step=0.01)
     
     solstice_territory_name = st.sidebar.selectbox(
-        "Select Solstice Territory", ["Ameren Illinois", "Eversource - Western MA"],
+        "Select Solstice Territory", ["Ameren Illinois", "Eversource - Western MA", 
+                                      "Ameren - Mercer County & Surrounding", "Central Hudson",
+                                      "ComEd - IL", "Con Edison - NY", "EPE (El Paso Electric)",
+                                      "Eversource - Eastern MA", "Eversource - Western MA",
+                                      "Eversource - Greater Boston", "Eversource - MA", 
+                                      "Eversource - Southeast MA", "JCP&L", "National Grid - MA", 
+                                      "National Grid - NY", "National Grid MA NEMA"]
     )
 
     def get_solstice_territory_geojson(solstice_territory_name):
         load_name = "filtered_geojsons/" + solstice_territory_name + '.geojson'
         return gpd.read_file(load_name)
 
-    # Load the GeoJSON file
-    #zip_geojson = gpd.read_file('demo_zips.geojson')
     zip_geojson = get_solstice_territory_geojson(solstice_territory_name)
-
-    # Load person data, forcing ZIP to be read as strings
-    person_data = pd.read_csv('data.csv', dtype={'ZIP': str})
-
-    # Ensure ZIP codes have leading zeros and handle floats
+    #person_data = pd.read_csv('data.csv', dtype={'ZIP': str})
+    person_data = pd.read_csv('../energyscore-model/data/standard/combined_rf_stats_person.csv')
     person_data['ZIP'] = person_data['ZIP'].apply(
         lambda x: str(int(float(x))).zfill(5) if pd.notnull(x) else '')
-
-    # Ensure GeoJSON ZIP codes are formatted as strings with leading zeros
     zip_geojson['ZIP'] = zip_geojson['ZCTA5CE10'].astype(str).str.zfill(5)
 
-    # Function to load utility zone data based on state
-
-    def load_state_util(state_name):
-        if state_name == 'New Mexico':
-            temp = gpd.read_file('nm_utils.geojson')
-            temp = temp[['new_name', 'geometry']]
-            return temp
-        elif state_name == 'Massachusetts':
-            return gpd.read_file('ma_utils.geojson')
-
-    # Function to calculate metrics for each ZIP
-
     def calculate_zip_metrics(stats_data_person, fico_threshold, energy_score_threshold):
-        stats_data_person['FICO_PASS'] = stats_data_person['FICO_V9_SCORE'] > fico_threshold
+        stats_data_person['FICO_PASS'] = stats_data_person['FICO_V9_SCORE'] < fico_threshold
         stats_data_person['ENERGYSCORE_PASS'] = stats_data_person['WEIGHTED_ENERGYSCORE'] > energy_score_threshold
 
         def calc_metrics(group):
@@ -102,18 +87,21 @@ with st.spinner("Loading map..."):
             below_fico = group[group['FICO_PASS'] == False]
             above_fico = group[group['FICO_PASS'] == True]
 
-            below_fico_pass = below_fico[below_fico['WEIGHTED_ENERGYSCORE']
-                                         <= energy_score_threshold]
+            below_fico_pass = below_fico[below_fico['WEIGHTED_ENERGYSCORE'] <= energy_score_threshold]
             pct_below_fico = len(below_fico) / total_population
             pct_above_fico = len(above_fico) / total_population
+            percent_increase_in_qualifications = (len(below_fico_pass) / total_population) * 100 if len(below_fico_pass) > 0 else 0
 
-            percent_increase_in_qualifications = (
-                len(below_fico_pass) / total_population) * 100 if len(below_fico_pass) > 0 else 0
+            group['FICO_PREDICTION'] = group['FICO_PASS'] == (group['WEIGHTED_ACTUAL_OUTPUT'] == 0)
+            fico_accuracy = accuracy_score(group['WEIGHTED_ACTUAL_OUTPUT'], group['FICO_PREDICTION'])
 
-            fico_accuracy = accuracy_score(
-                below_fico['WEIGHTED_ACTUAL_OUTPUT'], below_fico['FICO_PASS']) if len(below_fico) > 0 else np.nan
-            energy_accuracy = accuracy_score(
-                below_fico['WEIGHTED_ACTUAL_OUTPUT'], below_fico['ENERGYSCORE_PASS']) if len(below_fico) > 0 else np.nan
+            group['ENERGYSCORE_PREDICTION'] = group['ENERGYSCORE_PASS'] == (group['WEIGHTED_ACTUAL_OUTPUT'] == 0)
+            energy_accuracy = accuracy_score(group['WEIGHTED_ACTUAL_OUTPUT'], group['ENERGYSCORE_PREDICTION'])
+
+            if fico_accuracy == 0:
+                pct_increase_accuracy_es = 0
+            else:
+                pct_increase_accuracy_es = (energy_accuracy - fico_accuracy) / fico_accuracy * 100
 
             return pd.Series({
                 'Total Population': total_population,
@@ -121,73 +109,71 @@ with st.spinner("Loading map..."):
                 'Percent Above FICO': pct_above_fico,
                 'FICO Accuracy': fico_accuracy,
                 'EnergyScore Accuracy': energy_accuracy,
+                'Increase in Accuracy': pct_increase_accuracy_es,
                 'Qualification Increase': percent_increase_in_qualifications,
             })
 
-        # Group by ZIP and apply metrics calculation
         zip_metrics = stats_data_person.groupby('ZIP').apply(calc_metrics)
         zip_metrics = zip_metrics.reset_index()
         return zip_metrics
 
-    # Function to calculate ZIP to utility mapping and display on the map
+    def calculate_zip_to_util(solstice_territory_name):
+        state_util = get_solstice_territory_geojson(solstice_territory_name)
+        zip_metrics = calculate_zip_metrics(person_data, fico_threshold, energy_score_threshold)
+        zip_level_geo = pd.merge(zip_metrics, state_util, on='ZIP', how='left')
+        zip_level_geo = zip_level_geo.dropna(subset=['geometry'])
+        zip_level_geo = gpd.GeoDataFrame(zip_level_geo, crs="EPSG:4326", geometry=zip_level_geo['geometry'])
+        return zip_level_geo
 
-    def calculate_zip_to_util(zip_level_geo, state_name):
-        # Load the utility data for the state
-        state_util = load_state_util(state_name)
-        state_util.rename(columns={'new_name': 'Utility'}, inplace=True)
+    zip_level_geo = calculate_zip_to_util(solstice_territory_name)
 
-        # Ensure ZIP code geometries have the same projection as the utility data
-        zip_level_geo = zip_level_geo.to_crs(state_util.crs)
+    # Display the top 10 ZIP codes by Qualification Increase (less than 100)
+    st.subheader(f"Top 10 ZIP Codes for Qualification Increase in {solstice_territory_name}")
+    top_10_zip_codes = zip_level_geo[zip_level_geo['Qualification Increase'] < 100].nlargest(10, 'Qualification Increase')
+   # st.dataframe(top_10_zip_codes[['ZIP', 'Qualification Increase']])
 
-        # Convert the ZIP geometries to representative points
-        zip_level_geo['geometry'] = zip_level_geo.representative_point()
+    top_10_zip_codes['ZIP'] = top_10_zip_codes['ZIP'].astype(str)
+    top_10_zip_codes = top_10_zip_codes.sort_values(by='Qualification Increase', ascending=False)
 
-        # Perform spatial join with utility data based on point locations
-        zip_level_geo = gpd.sjoin(
-            zip_level_geo, state_util, how='left', predicate='within')
 
-        # Group by utility name ('new_name') and calculate the mean of 'Qualification Increase'
-        zip_to_util = zip_level_geo.groupby(
-            'Utility')['Qualification Increase'].mean().reset_index()
 
-        # Merge utility data with the calculated qualification increase
-        state_util = state_util.merge(zip_to_util, on='Utility', how='left')
+    # Bar plot for top 10 ZIP codes
+    fig = px.bar(top_10_zip_codes, x='ZIP', y='Qualification Increase', title=" ")
+    fig.update_xaxes(type='category', tickmode='array', tickvals=top_10_zip_codes['ZIP'], ticktext=top_10_zip_codes['ZIP'])
 
-        return state_util
+    st.plotly_chart(fig)
 
-    # Streamlit sidebar input to select a state
-    state_name = st.sidebar.selectbox(
-        "Select State", ["New Mexico", "Massachusetts"])
 
-    # Calculate metrics and merge with geo data
-    zip_metrics = calculate_zip_metrics(
-        person_data, fico_threshold, energy_score_threshold)
-    zip_level_geo = pd.merge(zip_metrics, zip_geojson, on='ZIP', how='left')
-    zip_level_geo = zip_level_geo.dropna(subset=['geometry'])
-    zip_level_geo = gpd.GeoDataFrame(zip_level_geo, geometry='geometry')
 
-    # Use the new function to calculate ZIP to utility metrics
-    state_util = calculate_zip_to_util(zip_level_geo, state_name)
+    # Average Qualification Increase for the territory
+    avg_qualification_increase = zip_level_geo['Qualification Increase'].mean()
+    st.subheader(f"Average Qualification Increase for {solstice_territory_name}")
+    st.write(f"The average qualification increase for {solstice_territory_name} is {avg_qualification_increase:.2f}%.")
 
-    # Display utility-level metrics
-    st.write(f"Utility Qualification Increase for {state_name}")
-    st.write(state_util[['Utility', 'Qualification Increase']])
-
-    def get_state_coordinates(state_name):
-        if state_name == 'New Mexico':
-            return 34.9727, -105.0324
-        elif state_name == 'Massachusetts':
+    def get_state_coordinates(solstice_territory_name):
+        # Illinois
+        if solstice_territory_name in ['Ameren - Mercer County & Surrounding', 'Ameren Illinois']:
+            return 39.7727, -89.6501
+        # MA & NY
+        elif solstice_territory_name in ['Eversource - Western MA', 'Eversource - Eastern MA', 'Eversource - Greater Boston',
+                                      'Eversource - MA', 'Eversource - Southeast MA', 'National Grid - MA', 'National Grid - NY',
+                                      'National Grid MA NEMA']:
             return 42.4072, -71.3824
+        elif solstice_territory_name in ['PNM (Public Service Co. of New Mexico)', 'El Paso Electric']:
+            return 35.0844, -106.6504
+        else:
+            return 40.7128, -74.0060
+            
 
     # Display map with Folium
-    lat, lng = get_state_coordinates(state_name=state_name)
-    m = folium.Map(location=[lat, lng], zoom_start=6)
+    lat, lng = get_state_coordinates(solstice_territory_name=solstice_territory_name)
+    m = folium.Map(location=[lat, lng], zoom_start=5)
 
     # Create colormap based on Qualification Increase
     min_value = min(zip_level_geo['Qualification Increase'].min(
-    ), state_util['Qualification Increase'].min())
+    ), zip_level_geo['Qualification Increase'].min())
     max_value = max(zip_level_geo['Qualification Increase'].max(
-    ), state_util['Qualification Increase'].max())
+    ), zip_level_geo['Qualification Increase'].max())
     colormap = cm.LinearColormap(colors=["#fde725", "#35b779", "#31688e", "#440154"],
                                  vmin=min_value, vmax=max_value,
                                  caption='Qualification Increase')
@@ -207,17 +193,20 @@ with st.spinner("Loading map..."):
     # ).add_to(zip_layer)
 
     # Add Utility Layer
+
     utility_layer = folium.FeatureGroup(name='Utility Zones')
     folium.GeoJson(
-        state_util.__geo_interface__,
+        zip_level_geo.__geo_interface__,
         style_function=lambda feature: {
             'fillOpacity': 0.7,
             'weight': 0.5,
             'color': 'black',
             'fillColor': colormap(feature['properties']['Qualification Increase']) if feature['properties']['Qualification Increase'] else 'gray'
         },
-        tooltip=folium.GeoJsonTooltip(fields=['Utility', 'Qualification Increase'], aliases=[
-                                      'Utility Zone', 'Qualification Increase'])
+        tooltip=folium.GeoJsonTooltip(fields=['ZIP', 'Qualification Increase', 'FICO Accuracy', 
+                                              'EnergyScore Accuracy', 'Increase in Accuracy'], aliases=[
+                                      'ZIP', 'Qualification Increase', 'FICO Accuracy', 
+                                              'EnergyScore Accuracy', 'Increase in Accuracy'])
     ).add_to(utility_layer)
 
     # Add layers to map
