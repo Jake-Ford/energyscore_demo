@@ -1,2 +1,6 @@
 # Ignore secrets
 /.streamlit/secrets.toml
+
+# ignore any geojson file
+*.geojson
+/data/*
