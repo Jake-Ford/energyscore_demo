@@ -36,16 +36,16 @@ with st.spinner("Loading map..."):
 
     st.title("EnergyScore Utility Level Default Risk Analysis")
     st.write("""
-           This app displays the default risk predictions from EnergyScore and allows comparison with FICO scores across different Utility zones.
+           This interactive app displays the geospaital results from EnergyScore. We collected over 30 million tradeline records across 2 million individuals to create a better, more inclusive predictor than FICO scores. 
              
-            Select the Solstice Territory and the FICO Score and EnergyScore thresholds to view the default risk predictions.
+            Select the Solstice Territory and the FICO Score and EnergyScore thresholds to view the default risk predictions. 
            """)
 
     # Sidebar for user inputs
     fico_threshold = st.sidebar.slider(
         "Select FICO Score Threshold", 300, 850, 650, step=10)
     energy_score_threshold = st.sidebar.slider(
-        "EnergyScore Threshold for High Risk", 0.0, 1.0, 0.75, step=0.01)
+        "EnergyScore Threshold for High Risk", 0.0, 1.0, 0.5, step=0.01)
     
     solstice_territory_name = st.sidebar.selectbox(
         "Select Solstice Territory", ["Ameren Illinois", "Eversource - Western MA", 
@@ -68,9 +68,33 @@ with st.spinner("Loading map..."):
         lambda x: str(int(float(x))).zfill(5) if pd.notnull(x) else '')
     zip_geojson['ZIP'] = zip_geojson['ZCTA5CE10'].astype(str).str.zfill(5)
 
+   
+
     def calculate_zip_metrics(stats_data_person, fico_threshold, energy_score_threshold):
+
+        #TODO: make sure these 'control' stats get filtered based on the geojson name; they're not changin 
         stats_data_person['FICO_PASS'] = stats_data_person['FICO_V9_SCORE'] < fico_threshold
         stats_data_person['ENERGYSCORE_PASS'] = stats_data_person['WEIGHTED_ENERGYSCORE'] > energy_score_threshold
+
+        total_population = len(stats_data_person)
+
+        total_below_fico = stats_data_person[stats_data_person['FICO_PASS'] == False]
+
+        total_es_accuracy = accuracy_score(stats_data_person['WEIGHTED_ACTUAL_OUTPUT'], stats_data_person['ENERGYSCORE_PASS'])
+        total_fico_accuracy = accuracy_score(stats_data_person['WEIGHTED_ACTUAL_OUTPUT'], stats_data_person['FICO_PASS'])
+
+        # how many people below the fico threshold would have been approved by energyscore
+        below_fico_pass = total_below_fico[total_below_fico['WEIGHTED_ENERGYSCORE'] <= energy_score_threshold]
+        below_fico_fail = total_below_fico[total_below_fico['WEIGHTED_ENERGYSCORE'] > energy_score_threshold]
+
+        below_fico_pass_count = len(below_fico_pass)
+
+
+        # what is the accuracy of this marginal approval using EnergyScore
+
+        below_fico_es_accuracy_control = accuracy_score(total_below_fico['WEIGHTED_ACTUAL_OUTPUT'], total_below_fico['ENERGYSCORE_PASS'])
+
+        percent_increase_in_qualifications_total = (below_fico_pass_count / total_population) * 100
 
         def calc_metrics(group):
             total_population = len(group)
@@ -85,6 +109,8 @@ with st.spinner("Loading map..."):
                 })
 
             below_fico = group[group['FICO_PASS'] == False]
+            below_fico['ENERGYSCORE_PREDICTION'] = below_fico['ENERGYSCORE_PASS'] == (below_fico['WEIGHTED_ACTUAL_OUTPUT'] == 0)
+
             above_fico = group[group['FICO_PASS'] == True]
 
             below_fico_pass = below_fico[below_fico['WEIGHTED_ENERGYSCORE'] <= energy_score_threshold]
@@ -98,6 +124,11 @@ with st.spinner("Loading map..."):
             group['ENERGYSCORE_PREDICTION'] = group['ENERGYSCORE_PASS'] == (group['WEIGHTED_ACTUAL_OUTPUT'] == 0)
             energy_accuracy = accuracy_score(group['WEIGHTED_ACTUAL_OUTPUT'], group['ENERGYSCORE_PREDICTION'])
 
+            below_fico_es_accuracy = accuracy_score(below_fico['WEIGHTED_ACTUAL_OUTPUT'], below_fico['ENERGYSCORE_PREDICTION'])
+
+            avg_fico = group['FICO_V9_SCORE'].mean()
+            avg_es = group['WEIGHTED_ENERGYSCORE'].mean()
+
             if fico_accuracy == 0:
                 pct_increase_accuracy_es = 0
             else:
@@ -108,9 +139,19 @@ with st.spinner("Loading map..."):
                 'Percent Below FICO': pct_below_fico,
                 'Percent Above FICO': pct_above_fico,
                 'FICO Accuracy': fico_accuracy,
-                'EnergyScore Accuracy': energy_accuracy,
+                'Total EnergyScore Accuracy': energy_accuracy,
+                'Sub-FICO EnergyScore Accuracy': below_fico_es_accuracy,
                 'Increase in Accuracy': pct_increase_accuracy_es,
                 'Qualification Increase': percent_increase_in_qualifications,
+                'Average FICO': avg_fico,
+                'Average EnergyScore': avg_es,
+                'Control ES Accuracy': total_es_accuracy, 
+                'Control FICO Accuracy' : total_fico_accuracy,
+                'Control Marginal Accuracy': (total_es_accuracy - total_fico_accuracy) / total_fico_accuracy * 100,
+                'below_fico_pass_count': below_fico_pass_count, 
+                'below_fico_es_accuracy': below_fico_es_accuracy_control, 
+                'percent_increase_in_qualifications': percent_increase_in_qualifications_total
+
             })
 
         zip_metrics = stats_data_person.groupby('ZIP').apply(calc_metrics)
@@ -144,11 +185,34 @@ with st.spinner("Loading map..."):
     st.plotly_chart(fig)
 
 
+    # to do: add how many people would have been approved 
+    # below the fico threshold: % of sub-FICO approved, accuracy sub-FICO 
 
     # Average Qualification Increase for the territory
-    avg_qualification_increase = zip_level_geo['Qualification Increase'].mean()
+    avg_qualification_increase = zip_level_geo['percent_increase_in_qualifications'].mean()
+    avg_fico = zip_level_geo['Average FICO'].mean()
+    avg_es = zip_level_geo['Average EnergyScore'].mean()
+    avg_accuracy_imp = zip_level_geo['Control Marginal Accuracy'].mean()
+
+    avg_sub_fico_es = zip_level_geo['below_fico_es_accuracy'].mean()
+
+    # Add the avg_qualification_increase to the sidebar as a metric
+    
+    st.sidebar.metric(label="Average EnergyScore: ", value = f"{avg_es:.2f}%")
+
+    st.sidebar.metric(label="Average FICO Score: ", value = f"{avg_fico:.0f}")
+
+    st.sidebar.metric(label = "Accuracy Percentage Increase", value = f"{avg_accuracy_imp:.1f}")
+
+    st.sidebar.metric(label="Average Qualification Increase", value=f"{avg_qualification_increase:.1f}%")
+
+
+    st.sidebar.metric(label="Sub-FICO EnergyScore Accuracy: ", value = f"{avg_sub_fico_es:.1f}%")
+    
+
     st.subheader(f"Average Qualification Increase for {solstice_territory_name}")
     st.write(f"The average qualification increase for {solstice_territory_name} is {avg_qualification_increase:.2f}%.")
+
 
     def get_state_coordinates(solstice_territory_name):
         # Illinois
@@ -170,13 +234,13 @@ with st.spinner("Loading map..."):
     m = folium.Map(location=[lat, lng], zoom_start=5)
 
     # Create colormap based on Qualification Increase
-    min_value = min(zip_level_geo['Qualification Increase'].min(
-    ), zip_level_geo['Qualification Increase'].min())
+    min_value = min(zip_level_geo['Sub-FICO EnergyScore Accuracy'].min(
+    ), zip_level_geo['Sub-FICO EnergyScore Accuracy'].min())
     max_value = max(zip_level_geo['Qualification Increase'].max(
-    ), zip_level_geo['Qualification Increase'].max())
+    ), zip_level_geo['Sub-FICO EnergyScore Accuracy'].max())
     colormap = cm.LinearColormap(colors=["#fde725", "#35b779", "#31688e", "#440154"],
                                  vmin=min_value, vmax=max_value,
-                                 caption='Qualification Increase')
+                                 caption='Sub-FICO EnergyScore Accuracy')
 
     # Add ZIP layer
     # zip_layer = folium.FeatureGroup(name='ZIP Codes')
@@ -203,10 +267,10 @@ with st.spinner("Loading map..."):
             'color': 'black',
             'fillColor': colormap(feature['properties']['Qualification Increase']) if feature['properties']['Qualification Increase'] else 'gray'
         },
-        tooltip=folium.GeoJsonTooltip(fields=['ZIP', 'Qualification Increase', 'FICO Accuracy', 
-                                              'EnergyScore Accuracy', 'Increase in Accuracy'], aliases=[
-                                      'ZIP', 'Qualification Increase', 'FICO Accuracy', 
-                                              'EnergyScore Accuracy', 'Increase in Accuracy'])
+        tooltip=folium.GeoJsonTooltip(fields=['ZIP', 'Sub-FICO EnergyScore Accuracy', 'Qualification Increase', 'FICO Accuracy', 
+                                              'Total EnergyScore Accuracy', 'Increase in Accuracy'], aliases=[
+                                      'ZIP', 'Sub-FICO EnergyScore Accuracy', 'Qualification Increase', 'FICO Accuracy', 
+                                              'Total EnergyScore Accuracy', 'Increase in Accuracy'])
     ).add_to(utility_layer)
 
     # Add layers to map
