@@ -3,4 +3,4 @@
 
 # ignore any geojson file
 *.geojson
-/data/*
+

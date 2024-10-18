@@ -63,7 +63,7 @@ with st.spinner("Loading map..."):
 
     zip_geojson = get_solstice_territory_geojson(solstice_territory_name)
     #person_data = pd.read_csv('data.csv', dtype={'ZIP': str})
-    person_data = pd.read_csv('../energyscore-model/data/standard/combined_rf_stats_person.csv')
+    person_data = pd.read_csv('data/combined_rf_stats_person.csv')
     person_data['ZIP'] = person_data['ZIP'].apply(
         lambda x: str(int(float(x))).zfill(5) if pd.notnull(x) else '')
     zip_geojson['ZIP'] = zip_geojson['ZCTA5CE10'].astype(str).str.zfill(5)
