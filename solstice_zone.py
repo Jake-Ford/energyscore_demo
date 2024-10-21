@@ -127,7 +127,7 @@ with st.spinner("Loading map..."):
             below_fico_es_accuracy = accuracy_score(below_fico['WEIGHTED_ACTUAL_OUTPUT'], below_fico['ENERGYSCORE_PREDICTION'])
 
             avg_fico = group['FICO_V9_SCORE'].mean()
-            avg_es = group['WEIGHTED_ENERGYSCORE'].mean()
+            avg_es = (group['WEIGHTED_ENERGYSCORE'].mean())*100
 
             if fico_accuracy == 0:
                 pct_increase_accuracy_es = 0
@@ -194,7 +194,7 @@ with st.spinner("Loading map..."):
     avg_es = zip_level_geo['Average EnergyScore'].mean()
     avg_accuracy_imp = zip_level_geo['Control Marginal Accuracy'].mean()
 
-    avg_sub_fico_es = zip_level_geo['below_fico_es_accuracy'].mean()
+    avg_sub_fico_es = (zip_level_geo['Sub-FICO EnergyScore Accuracy'].mean())*100
 
     # Add the avg_qualification_increase to the sidebar as a metric
     
