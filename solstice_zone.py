@@ -36,10 +36,18 @@ with st.spinner("Loading map..."):
 
     st.title("EnergyScore Utility Level Default Risk Analysis")
     st.write("""
-           This interactive app displays the geospaital results from EnergyScore. We collected over 30 million tradeline records across 2 million individuals to create a better, more inclusive predictor than FICO scores. 
+            By using over 30 million tradeline records across 2 million individuals, EnergyScore is able to more accurately and inclusively predict risk of default payment than FICO scores alone. This tool allows you to explore the default risk predictions for different Solstice territories based on FICO Score and EnergyScore thresholds.
              
-            Select the Solstice Territory and the FICO Score and EnergyScore thresholds to view the default risk predictions. 
+            To begin, select the Solstice Territory, FICO Score and EnergyScore thresholds to view the default risk predictions. The model will calculate the inputs and output aggregated statistics. Disaggregated data is available on the zip code level and is displayed on the map below. Note, samples sizes for some zip codes are small and may not be representative of the entire population.
            """)
+    
+    st.write(""" 
+                - **Average EnergyScore**: The average EnergyScore for the selected Solstice Territory; 0 indicates low risk and 1 indicates high risk.
+                - **Average FICO Score**: The average FICO Score for the selected Solstice Territory; on a scale from 300 to 850.
+                - **Accuracy Percentage Inrease**: The percentage increase in accuracy when using EnergyScore compared to FICO Score.
+                - **Average Qualification Increase**: The average increase across all zip codes for the number of individuals who would be approved using EnergyScore compared to FICO Score.
+                - **Sub-FICO EnergyScore Accuracy**: The accuracy of EnergyScore for individuals below the FICO threshold.
+             """)
 
     # Sidebar for user inputs
     fico_threshold = st.sidebar.slider(
@@ -72,13 +80,15 @@ with st.spinner("Loading map..."):
 
     def calculate_zip_metrics(stats_data_person, fico_threshold, energy_score_threshold):
 
-        #TODO: make sure these 'control' stats get filtered based on the geojson name; they're not changin 
-        stats_data_person['FICO_PASS'] = stats_data_person['FICO_V9_SCORE'] < fico_threshold
-        stats_data_person['ENERGYSCORE_PASS'] = stats_data_person['WEIGHTED_ENERGYSCORE'] > energy_score_threshold
+        stats_data_person['FICO_PASS'] = np.where(stats_data_person['FICO_V9_SCORE'] >= fico_threshold, 0, 1)
+        stats_data_person['ENERGYSCORE_PASS'] = np.where(stats_data_person['WEIGHTED_ENERGYSCORE'] >= energy_score_threshold, 1, 0)
+      #  stats_data_person['ENERGYSCORE_PASS'] = stats_data_person['WEIGHTED_ENERGYSCORE'] > energy_score_threshold
+       # stats_data_person['FICO_PASS'] = stats_data_person['FICO_V9_SCORE'] < fico_threshold
+       # stats_data_person['ENERGYSCORE_PASS'] = stats_data_person['WEIGHTED_ENERGYSCORE'] > energy_score_threshold
 
         total_population = len(stats_data_person)
 
-        total_below_fico = stats_data_person[stats_data_person['FICO_PASS'] == False]
+        total_below_fico = stats_data_person[stats_data_person['FICO_PASS'] == 0]
 
         total_es_accuracy = accuracy_score(stats_data_person['WEIGHTED_ACTUAL_OUTPUT'], stats_data_person['ENERGYSCORE_PASS'])
         total_fico_accuracy = accuracy_score(stats_data_person['WEIGHTED_ACTUAL_OUTPUT'], stats_data_person['FICO_PASS'])
@@ -96,6 +106,32 @@ with st.spinner("Loading map..."):
 
         percent_increase_in_qualifications_total = (below_fico_pass_count / total_population) * 100
 
+
+    def calculate_zip_metrics(stats_data_person, fico_threshold, energy_score_threshold):
+
+        stats_data_person['FICO_FAIL'] = np.where(stats_data_person['FICO_V9_SCORE'] >= fico_threshold, 0, 1)
+        stats_data_person['ENERGYSCORE_FAIL'] = np.where(stats_data_person['WEIGHTED_ENERGYSCORE'] >= energy_score_threshold, 1, 0)
+
+        total_population = len(stats_data_person)
+
+        total_below_fico = stats_data_person[stats_data_person['FICO_FAIL'] == 1]
+
+        total_es_accuracy = accuracy_score(stats_data_person['WEIGHTED_ACTUAL_OUTPUT'], stats_data_person['ENERGYSCORE_FAIL'])
+        total_fico_accuracy = accuracy_score(stats_data_person['WEIGHTED_ACTUAL_OUTPUT'], stats_data_person['FICO_FAIL'])
+
+        # how many people below the fico threshold would have been approved by energyscore
+        below_fico_pass = total_below_fico[total_below_fico['ENERGYSCORE_FAIL'] ==1]
+        below_fico_fail = total_below_fico[total_below_fico['ENERGYSCORE_FAIL'] == 0 ]
+
+        below_fico_pass_count = len(below_fico_pass)
+
+
+        # what is the accuracy of this marginal approval using EnergyScore
+
+        below_fico_es_accuracy_control = accuracy_score(total_below_fico['WEIGHTED_ACTUAL_OUTPUT'], total_below_fico['ENERGYSCORE_FAIL'])
+
+        percent_increase_in_qualifications_total = (below_fico_pass_count / total_population) * 100
+
         def calc_metrics(group):
             total_population = len(group)
             if total_population == 0:
@@ -108,23 +144,23 @@ with st.spinner("Loading map..."):
                     'Qualification Increase': 0,
                 })
 
-            below_fico = group[group['FICO_PASS'] == False]
-            below_fico['ENERGYSCORE_PREDICTION'] = below_fico['ENERGYSCORE_PASS'] == (below_fico['WEIGHTED_ACTUAL_OUTPUT'] == 0)
+            below_fico = group[group['FICO_FAIL'] == 1]
+            above_fico = group[group['FICO_FAIL'] == 0]
 
-            above_fico = group[group['FICO_PASS'] == True]
-
-            below_fico_pass = below_fico[below_fico['WEIGHTED_ENERGYSCORE'] <= energy_score_threshold]
+            below_fico_pass = below_fico[below_fico['ENERGYSCORE_FAIL'] ==0]
+            
             pct_below_fico = len(below_fico) / total_population
             pct_above_fico = len(above_fico) / total_population
-            percent_increase_in_qualifications = (len(below_fico_pass) / total_population) * 100 if len(below_fico_pass) > 0 else 0
+            percent_increase_in_qualifications = (len(below_fico_pass) / total_population) * 100 
 
-            group['FICO_PREDICTION'] = group['FICO_PASS'] == (group['WEIGHTED_ACTUAL_OUTPUT'] == 0)
-            fico_accuracy = accuracy_score(group['WEIGHTED_ACTUAL_OUTPUT'], group['FICO_PREDICTION'])
+            #group['FICO_PREDICTION'] = group['FICO_FAIL'] == (group['WEIGHTED_ACTUAL_OUTPUT'] == 0)
+            fico_accuracy = accuracy_score(group['WEIGHTED_ACTUAL_OUTPUT'], group['FICO_FAIL'])
 
-            group['ENERGYSCORE_PREDICTION'] = group['ENERGYSCORE_PASS'] == (group['WEIGHTED_ACTUAL_OUTPUT'] == 0)
-            energy_accuracy = accuracy_score(group['WEIGHTED_ACTUAL_OUTPUT'], group['ENERGYSCORE_PREDICTION'])
+        #  group['ENERGYSCORE_PREDICTION'] = group['ENERGYSCORE_FAIL'] == (group['WEIGHTED_ACTUAL_OUTPUT'] == 0)
 
-            below_fico_es_accuracy = accuracy_score(below_fico['WEIGHTED_ACTUAL_OUTPUT'], below_fico['ENERGYSCORE_PREDICTION'])
+            energy_accuracy = accuracy_score(group['WEIGHTED_ACTUAL_OUTPUT'], group['ENERGYSCORE_FAIL'])
+
+            below_fico_es_accuracy = accuracy_score(below_fico['WEIGHTED_ACTUAL_OUTPUT'], below_fico['ENERGYSCORE_FAIL'])
 
             avg_fico = group['FICO_V9_SCORE'].mean()
             avg_es = (group['WEIGHTED_ENERGYSCORE'].mean())*100
@@ -166,6 +202,8 @@ with st.spinner("Loading map..."):
         zip_level_geo = gpd.GeoDataFrame(zip_level_geo, crs="EPSG:4326", geometry=zip_level_geo['geometry'])
         return zip_level_geo
 
+   # temp = calculate_zip_to_util(solstice_territory_name)
+
     zip_level_geo = calculate_zip_to_util(solstice_territory_name)
 
     # Display the top 10 ZIP codes by Qualification Increase (less than 100)
@@ -189,7 +227,7 @@ with st.spinner("Loading map..."):
     # below the fico threshold: % of sub-FICO approved, accuracy sub-FICO 
 
     # Average Qualification Increase for the territory
-    avg_qualification_increase = zip_level_geo['percent_increase_in_qualifications'].mean()
+    avg_qualification_increase = zip_level_geo['Qualification Increase'].mean()
     avg_fico = zip_level_geo['Average FICO'].mean()
     avg_es = zip_level_geo['Average EnergyScore'].mean()
     avg_accuracy_imp = zip_level_geo['Control Marginal Accuracy'].mean()
@@ -198,11 +236,11 @@ with st.spinner("Loading map..."):
 
     # Add the avg_qualification_increase to the sidebar as a metric
     
-    st.sidebar.metric(label="Average EnergyScore: ", value = f"{avg_es:.2f}%")
+    st.sidebar.metric(label="Average EnergyScore: ", value = f"{avg_es:.1f}")
 
     st.sidebar.metric(label="Average FICO Score: ", value = f"{avg_fico:.0f}")
 
-    st.sidebar.metric(label = "Accuracy Percentage Increase", value = f"{avg_accuracy_imp:.1f}")
+    st.sidebar.metric(label = "Accuracy Percentage Increase", value = f"{avg_accuracy_imp:.1f}%")
 
     st.sidebar.metric(label="Average Qualification Increase", value=f"{avg_qualification_increase:.1f}%")
 
