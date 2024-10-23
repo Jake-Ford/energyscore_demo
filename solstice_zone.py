@@ -9,6 +9,8 @@ import hmac
 from streamlit_folium import folium_static
 from sklearn.metrics import accuracy_score
 import plotly.express as px
+import plotly.graph_objects as go
+
 
 def check_password():
     """Returns `True` if the user had the correct password."""
@@ -323,3 +325,238 @@ with st.spinner("Loading map..."):
 
     # Display the map using folium_static
     folium_static(m)
+
+    # Define a function to categorize the predictions based on thresholds
+    def calculate_loan_outcome(df, fico_threshold, energy_score_threshold, use_es=True):
+        df['FICO_APPROVED'] = np.where(df['FICO_V9_SCORE'] >= fico_threshold, 1, 0)
+        df['ES_APPROVED'] = np.where(df['WEIGHTED_ENERGYSCORE'] < energy_score_threshold, 1, 0)
+
+        df['PAYBACK'] = df['WEIGHTED_ACTUAL_OUTPUT']  # 1 means default, 0 means pays back
+
+        if use_es == True:
+        
+            # Classification categories:
+            df['Category'] = np.select(
+                [
+                    (df['ES_APPROVED'] == 0) & (df['PAYBACK'] == 1),  # True Negative
+                    (df['ES_APPROVED'] == 1) & (df['PAYBACK'] == 0),  # True Positive
+                    (df['ES_APPROVED'] == 1) & (df['PAYBACK'] == 1),  # False Positive
+                    (df['ES_APPROVED'] == 0) & (df['PAYBACK'] == 0),  # False Negative
+                ],
+                ['True Negative', 'True Positive', 'False Positive', 'False Negative'],
+                default='Unknown'
+            )
+            return df
+        else:
+            df['Category'] = np.select(
+                [
+                    (df['FICO_APPROVED'] == 0) & (df['PAYBACK'] == 1),  # True Negative
+                    (df['FICO_APPROVED'] == 1) & (df['PAYBACK'] == 0),  # True Positive
+                    (df['FICO_APPROVED'] == 1) & (df['PAYBACK'] == 1),  # False Positive
+                    (df['FICO_APPROVED'] == 0) & (df['PAYBACK'] == 0),  # False Negative
+                ],
+                ['True Negative', 'True Positive', 'False Positive', 'False Negative'],
+                default='Unknown'
+            )
+            return df 
+            return
+
+    # Streamlit app
+    st.title("Loan Threshold Simulation")
+    st.write("""
+             The below tool simulates loan approvals using thresholds based on FICO and EnergyScore. The two parameters are used to assume a succesful loan nets $300, and the cost of a false positive is $700. 
+            
+             For example, with a 650 FICO cutoff compared to a 0.5 EnergyScore cutoff, profits increase by 40%. This result will change 
+             
+             """)
+
+    # Sidebar for profit and cost inputs
+    true_positive_profit = st.sidebar.number_input("Profit for a successful loan (True Positive)", value=300)
+    false_positive_cost = st.sidebar.number_input("Cost for a defaulted loan (False Positive)", value=-700)
+
+    # Process the data
+    df_outcome = calculate_loan_outcome(person_data, fico_threshold, energy_score_threshold, use_es=True)
+
+    # Define the sampling percentage (e.g., 1% of the total data)
+   # sampling_percentage = st.sidebar.slider("Sampling Percentage", 0.01, 1.0, 0.05)
+
+    sampling_percentage = 0.05
+    df_sampled = df_outcome.sample(frac=0.05)
+
+    # Randomly sample the data for the plot
+    df_sampled = df_outcome.sample(frac=sampling_percentage)
+
+    # Count results for the outcome summary
+    summary = df_sampled['Category'].value_counts().to_dict()
+
+    # Create the Plotly scatter plot
+    fig = px.scatter(
+        df_sampled, 
+        x="FICO_V9_SCORE", 
+        y="WEIGHTED_ENERGYSCORE", 
+        color="Category",
+        color_discrete_map={
+            'True Positive': 'blue',
+            'False Positive': 'lightblue',
+            'True Negative': 'green',
+            'False Negative': 'lightgreen'
+        },
+        title=f"EnergyScore Decision Outcome (Sampled {sampling_percentage * 100:.0f}%)"
+    )
+
+    # Customize the layout
+    fig.update_layout(
+        xaxis_title="FICO Score",
+        yaxis_title="EnergyScore",
+        showlegend=True,
+        height=600,
+        width=900,
+    )
+
+    st.plotly_chart(fig)
+
+    # Outcome summary
+    st.write("### EnergyScore Decision Summary")
+    st.write(f"**True Positives**: {summary.get('True Positive', 0)}")
+    st.write(f"**False Positives**: {summary.get('False Positive', 0)}")
+    st.write(f"**True Negatives**: {summary.get('True Negative', 0)}")
+    st.write(f"**False Negatives**: {summary.get('False Negative', 0)}")
+
+    # Add threshold indicators and summary stats
+    correct_rate = ((summary.get('True Positive', 0) + summary.get('True Negative', 0)) / len(df_sampled)) * 100
+
+    # Calculate profit
+    true_positives = summary.get('True Positive', 0)
+    false_positives = summary.get('False Positive', 0)
+
+    # Total profit: profit from True Positives + cost from False Positives
+    profit = (true_positives * true_positive_profit) + (false_positives * false_positive_cost)
+
+    # Calculate other metrics
+    true_positive_rate = (summary.get('True Positive', 0) / len(df_sampled[df_sampled['PAYBACK'] == 0])) * 100
+    positive_rate = (summary.get('True Positive', 0) / len(df_sampled)) * 100
+
+    st.write(f"**Correct Rate**: {correct_rate:.2f}%")
+    st.write(f"**Profit**: ${profit:,.0f}")
+    st.write(f"**True Positive Rate**: {true_positive_rate:.2f}%")
+    st.write(f"**Positive Rate**: {positive_rate:.2f}%")
+
+    temp_es_profit = profit
+
+
+
+    # ---------------------- FICO Thresholds --------------------------
+
+    df_outcome = calculate_loan_outcome(person_data, fico_threshold, energy_score_threshold, use_es=False)
+    df_sampled = df_outcome.sample(frac=sampling_percentage)
+
+    # Count results for FICO Score
+    fico_summary = df_sampled['Category'].value_counts().to_dict()
+
+    # Create the FICO Plotly scatter plot
+    fig_fico = px.scatter(
+        df_sampled, 
+        x="FICO_V9_SCORE", 
+        y="WEIGHTED_ENERGYSCORE", 
+        color="Category",
+        color_discrete_map={
+            'True Positive': 'blue',
+            'False Positive': 'lightblue',
+            'True Negative': 'green',
+            'False Negative': 'lightgreen'
+        },
+        title=f"FICO Score Decision Outcome (Sampled {sampling_percentage * 100:.0f}%)"
+    )
+
+    # Customize the layout
+    fig_fico.update_layout(
+        xaxis_title="FICO Score",
+        yaxis_title="EnergyScore",
+        showlegend=True,
+        height=600,
+        width=900,
+    )
+
+    # Plot the FICO scatter plot
+    st.plotly_chart(fig_fico)
+
+    # Decision Summary for FICO
+    st.write("### FICO Decision Summary")
+    st.write(f"**True Positives**: {fico_summary.get('True Positive', 0)}")
+    st.write(f"**False Positives**: {fico_summary.get('False Positive', 0)}")
+    st.write(f"**True Negatives**: {fico_summary.get('True Negative', 0)}")
+    st.write(f"**False Negatives**: {fico_summary.get('False Negative', 0)}")
+
+    # Calculate correct rate for FICO
+    correct_rate_fico = ((fico_summary.get('True Positive', 0) + fico_summary.get('True Negative', 0)) / len(df_sampled)) * 100
+
+    # Profit Calculation for FICO
+    true_positives_fico = fico_summary.get('True Positive', 0)
+    false_positives_fico = fico_summary.get('False Positive', 0)
+    profit_fico = (true_positives_fico * true_positive_profit) + (false_positives_fico * false_positive_cost)
+
+    # Calculate other metrics for FICO
+    true_positive_rate_fico = (fico_summary.get('True Positive', 0) / len(df_sampled[df_sampled['PAYBACK'] == 0])) * 100
+    positive_rate_fico = (fico_summary.get('True Positive', 0) / len(df_sampled)) * 100
+
+    # Display FICO metrics
+    st.write(f"**Correct Rate (FICO)**: {correct_rate_fico:.2f}%")
+    st.write(f"**Profit (FICO)**: ${profit_fico:,.0f}")
+    st.write(f"**True Positive Rate (FICO)**: {true_positive_rate_fico:.2f}%")
+    st.write(f"**Positive Rate (FICO)**: {positive_rate_fico:.2f}%")
+
+
+    # temp_fico_profit = profit
+
+    # profit_pct_increase = ((temp_es_profit - temp_fico_profit) / temp_fico_profit) * 100
+
+
+    # st.sidebar.metric(label="Profit Percentage Increase: ", value = f"{profit_pct_increase:.2f}%")
+        # -------------------- EnergyScore Calculation ---------------------
+
+    # Process the data using EnergyScore (use_es=True)
+    df_outcome_es = calculate_loan_outcome(person_data, fico_threshold, energy_score_threshold, use_es=True)
+    df_sampled_es = df_outcome_es.sample(frac=sampling_percentage)
+
+    # Count results for EnergyScore
+    es_summary = df_sampled_es['Category'].value_counts().to_dict()
+
+    # Calculate profit for EnergyScore
+    true_positives_es = es_summary.get('True Positive', 0)
+    false_positives_es = es_summary.get('False Positive', 0)
+
+    # Total profit: profit from True Positives + cost from False Positives
+    profit_es = (true_positives_es * true_positive_profit) + (false_positives_es * false_positive_cost)
+
+    # Store EnergyScore profit for comparison
+    temp_es_profit = profit_es
+
+    # ---------------------- FICO Threshold Calculation --------------------------
+
+    # Process the data using FICO Score (use_es=False)
+    df_outcome_fico = calculate_loan_outcome(person_data, fico_threshold, energy_score_threshold, use_es=False)
+    df_sampled_fico = df_outcome_fico.sample(frac=sampling_percentage)
+
+    # Count results for FICO Score
+    fico_summary = df_sampled_fico['Category'].value_counts().to_dict()
+
+    # Calculate profit for FICO
+    true_positives_fico = fico_summary.get('True Positive', 0)
+    false_positives_fico = fico_summary.get('False Positive', 0)
+
+    # Total profit: profit from True Positives + cost from False Positives
+    profit_fico = (true_positives_fico * true_positive_profit) + (false_positives_fico * false_positive_cost)
+
+    # Store FICO profit for comparison
+    temp_fico_profit = profit_fico
+
+    # ------------------- Profit Percentage Increase Calculation -----------------
+
+    # Calculate the profit percentage increase between EnergyScore and FICO
+    if temp_fico_profit != 0:
+        profit_pct_increase = ((temp_es_profit - temp_fico_profit) / temp_fico_profit) * 100
+    else:
+        profit_pct_increase = 0  # Avoid division by zero
+
+    # Display Profit Percentage Increase
+    st.sidebar.metric(label="Profit Percentage Increase: ", value=f"{profit_pct_increase:.2f}%")
