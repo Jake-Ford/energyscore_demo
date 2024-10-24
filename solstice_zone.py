@@ -364,10 +364,11 @@ with st.spinner("Loading map..."):
     # Streamlit app
     st.title("Loan Threshold Simulation")
     st.write("""
-             The below tool simulates loan approvals using thresholds based on FICO and EnergyScore. The two parameters are used to assume a succesful loan nets 300 dollars, and the cost of a false positive is 700 dollars. 
-            
-             For example, with a 650 FICO cutoff compared to a 0.5 EnergyScore cutoff, profits increase by 40%. This result will change 
+             The below tool simulates loan approvals using thresholds based on FICO and EnergyScore. The two parameters are used to assume a succesful loan nets 300 dollars, and the cost of a false positive is 700 dollars. Using these inputs allows for an estimated profit increase had EnergyScore been used. Changing these parameters on the toolbar will change the profit change. For example, with a 650 FICO cutoff compared to a 0.5 EnergyScore cutoff, profits increase by 40%. 
              
+             In the below, Positive refers to a customer defaulting and Negative refers to a customer paying on time. True refers to model or FICO correctly identifying the payment behavior, whereas False refereces to the methodology incorrectly predicting the behavior. For example, True Positive cases refers to when the methodology correctly predicts cases of defaulting customers, or correct acceptances; whereas False Negatives refer to cases when the methology incorrectly rejects customers. 
+
+
              """)
 
     # Sidebar for profit and cost inputs
